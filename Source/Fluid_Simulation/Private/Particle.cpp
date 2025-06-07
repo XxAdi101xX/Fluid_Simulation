@@ -121,22 +121,5 @@ void AParticle::GenerateCircleMesh()
         true // Enable collision for this mesh section
     );
 
-    // Full path must include asset name twice
-    const FString MaterialPath = TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial");
-
-    // Load material at runtime
-    UMaterialInterface *BaseMaterial = Cast<UMaterialInterface>(
-        StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, *MaterialPath)
-    );
-
-    if (BaseMaterial)
-    {
-        UMaterialInstanceDynamic *DynamicMaterial = UMaterialInstanceDynamic::Create(BaseMaterial, this);
-
-        if (DynamicMaterial && ProceduralMeshComponent)
-        {
-            ProceduralMeshComponent->SetMaterial(0, DynamicMaterial);
-            DynamicMaterial->SetVectorParameterValue(TEXT("BaseColor"), Color);
-        }
-    }
+    // Material is created on UE5 side and set there
 }
