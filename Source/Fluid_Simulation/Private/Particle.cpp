@@ -6,44 +6,46 @@
 // Sets default values
 AParticle::AParticle()
 {
- 	// Set this actor to call Tick() every frame.
-	PrimaryActorTick.bCanEverTick = false;
+ 	// We want to update position each tick
+	PrimaryActorTick.bCanEverTick = true;
 
     // Create and attach the ProceduralMeshComponent
     ProceduralMeshComponent = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("GeneratedMesh"));
     RootComponent = ProceduralMeshComponent; // Set it as the root component
 
     // Set default values for properties
-    Radius = 100.0f;
-    NumSegments = 64; // Default to a reasonably smooth circle
-    Color = FLinearColor::Blue; // Default color
+    Radius = 20.0f;
+    NumLatitudeSegments = 32; // Default for a reasonably smooth sphere
+    NumLongitudeSegments = 32; // Default for a reasonably smooth sphere
+    Color = FLinearColor::Blue;
+    Position = FVector::ZeroVector; // Default to 0, 0, 0
+    Velocity = FVector::ZeroVector; // Default to no velocity
+    Gravity = 200.0f;
 
-    // Ensure the procedural mesh component is set up for collision if needed
-    // ProceduralMeshComponent->ContainsPhysicsTriMeshData(true); // Uncomment if you need collision from the mesh data
-
+    // We don't want to use UE5's default collision system for this procedural mesh
+	ProceduralMeshComponent->ContainsPhysicsTriMeshData(false);
 }
 
 void AParticle::OnConstruction(const FTransform &Transform)
 {
 	Super::OnConstruction(Transform);
 	// Generate the circle mesh when the actor is constructed
-	GenerateCircleMesh();
+    GenerateSphereMesh();
 }
 
 // Called when the game starts or when spawned
 void AParticle::BeginPlay()
 {
 	Super::BeginPlay();
-
-	// Generate the circle mesh when the actor begins play
-	GenerateCircleMesh();
-	
 }
 
 // Called every frame
 void AParticle::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+    UpdatePosition(DeltaTime);
+    GenerateSphereMesh();
 
 }
 
@@ -52,14 +54,15 @@ void AParticle::PostEditChangeProperty(FPropertyChangedEvent &PropertyChangedEve
 	Super::PostEditChangeProperty(PropertyChangedEvent);
     FName PropertyName = (PropertyChangedEvent.Property != nullptr) ? PropertyChangedEvent.Property->GetFName() : NAME_None;
     if (PropertyName == GET_MEMBER_NAME_CHECKED(AParticle, Radius) ||
-        PropertyName == GET_MEMBER_NAME_CHECKED(AParticle, NumSegments) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(AParticle, NumLatitudeSegments) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(AParticle, NumLongitudeSegments) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(AParticle, Color)
     ) {
-        GenerateCircleMesh();
+        GenerateSphereMesh();
     }
 }
 
-void AParticle::GenerateCircleMesh()
+void AParticle::GenerateSphereMesh()
 {
     // Clear any existing mesh data
     ProceduralMeshComponent->ClearAllMeshSections();
@@ -72,44 +75,96 @@ void AParticle::GenerateCircleMesh()
     TArray<FLinearColor> VertexColors;
     TArray<FProcMeshTangent> Tangents;
 
-    // Center vertex
-    Vertices.Add(FVector(0.0f, 0.0f, 0.0f));
-    Normals.Add(FVector(0.0f, 0.0f, 1.0f)); // Normal pointing up
-    UV0.Add(FVector2D(0.5f, 0.5f)); // Center of UV space
+    // Calculate number of vertices
+    // Top pole + (NumLatitudeSegments-1) rings + bottom pole
+    int32 NumPoles = 2; // Top and bottom poles
+    int32 VertsPerRing = NumLongitudeSegments + 1; // +1 to close the loop
+    int32 NumBodyRings = FMath::Max(0, NumLatitudeSegments - 1); // Exclude actual poles in rings calculation
+
+    // --- Vertices ---
+    // Top Pole (Index 0)
+    Vertices.Add(Position + FVector(0.0f, 0.0f, Radius));
+    Normals.Add(FVector::UpVector);
+    UV0.Add(FVector2D(0.5f, 1.0f)); // Top of texture
     VertexColors.Add(Color);
 
-    // Vertices around the circle
-    for (int32 i = 0; i < NumSegments; ++i)
+    // Body Vertices (Rings)
+    for (int32 LatIdx = 0; LatIdx < NumLatitudeSegments; ++LatIdx) // 0 to NumLatitudeSegments-1 (goes through all rings)
     {
-        float Angle = (float)i * (360.0f / NumSegments);
-        float Radian = FMath::DegreesToRadians(Angle);
+        float Phi = PI * (float)(LatIdx + 1) / (float)(NumLatitudeSegments + 1); // Latitude angle from 0 to PI
+        float SinPhi = FMath::Sin(Phi);
+        float CosPhi = FMath::Cos(Phi);
 
-        // Calculate vertex position
-        float X = Radius * FMath::Cos(Radian);
-        float Y = Radius * FMath::Sin(Radian);
-        Vertices.Add(FVector(X, Y, 0.0f));
+        for (int32 LongIdx = 0; LongIdx <= NumLongitudeSegments; ++LongIdx) // 0 to NumLongitudeSegments (inclusive for seamless wrap)
+        {
+            float Theta = 2.0f * PI * (float)LongIdx / (float)NumLongitudeSegments; // Longitude angle from 0 to 2*PI
+            float SinTheta = FMath::Sin(Theta);
+            float CosTheta = FMath::Cos(Theta);
 
-        // Add normal (all pointing up for a flat circle)
-        Normals.Add(FVector(0.0f, 0.0f, 1.0f));
+            FVector Vertex = FVector(Radius * SinPhi * CosTheta, Radius * SinPhi * SinTheta, Radius * CosPhi);
+            Vertices.Add(Position + Vertex); // Apply position offset
 
-        // Add UV coordinates (mapping circle to a square texture)
-        UV0.Add(FVector2D((X / Radius * 0.5f) + 0.5f, (Y / Radius * 0.5f) + 0.5f));
+            FVector Normal = Vertex.GetSafeNormal(); // Normal points from center to vertex
+            Normals.Add(Normal);
 
-        // Add vertex color
-        VertexColors.Add(Color);
+            FVector2D UV = FVector2D(1.0f - (float)LongIdx / NumLongitudeSegments, (float)(LatIdx + 1) / (float)(NumLatitudeSegments + 1));
+            UV0.Add(UV);
+
+            VertexColors.Add(Color);
+        }
     }
 
-    // Triangles
-    // The center vertex (index 0) connects to two adjacent outer vertices to form a triangle.
-    for (int32 i = 0; i < NumSegments; ++i)
+    // Bottom Pole (Last Index)
+    Vertices.Add(Position + FVector(0.0f, 0.0f, -Radius));
+    Normals.Add(FVector::DownVector);
+    UV0.Add(FVector2D(0.5f, 0.0f)); // Bottom of texture
+    VertexColors.Add(Color);
+
+    // Top Cap Triangles (connecting top pole to first ring)
+    for (int32 LongIdx = 0; LongIdx < NumLongitudeSegments; ++LongIdx)
     {
-        Triangles.Add(0); // Center vertex
-        Triangles.Add(i + 1); // Current outer vertex
-        Triangles.Add((i + 1) % NumSegments + 1); // Next outer vertex (wraps around for the last segment)
+        Triangles.Add(0); // Top pole
+        Triangles.Add(1 + LongIdx); // Current vertex on first ring
+        Triangles.Add(1 + (LongIdx + 1)); // Next vertex on first ring
+    }
+
+    // Body Triangles (connecting rings)
+    for (int32 LatIdx = 0; LatIdx < NumLatitudeSegments - 1; ++LatIdx) // Iterate through latitude bands
+    {
+        for (int32 LongIdx = 0; LongIdx < NumLongitudeSegments; ++LongIdx)
+        {
+            int32 CurrentRingStartIdx = 1 + (LatIdx * VertsPerRing); // Start index of current ring
+            int32 NextRingStartIdx = 1 + ((LatIdx + 1) * VertsPerRing); // Start index of next ring
+
+            int32 V0 = CurrentRingStartIdx + LongIdx;
+            int32 V1 = CurrentRingStartIdx + LongIdx + 1;
+            int32 V2 = NextRingStartIdx + LongIdx + 1;
+            int32 V3 = NextRingStartIdx + LongIdx;
+
+            // First triangle of the quad
+            Triangles.Add(V0);
+            Triangles.Add(V1);
+            Triangles.Add(V2);
+
+            // Second triangle of the quad
+            Triangles.Add(V0);
+            Triangles.Add(V2);
+            Triangles.Add(V3);
+        }
+    }
+
+    // Bottom Cap Triangles (connecting last ring to bottom pole)
+    int32 BottomPoleIdx = Vertices.Num() - 1; // Index of the bottom pole
+    int32 LastRingStartIdx = 1 + ((NumLatitudeSegments - 1) * VertsPerRing);
+
+    for (int32 LongIdx = 0; LongIdx < NumLongitudeSegments; ++LongIdx)
+    {
+        Triangles.Add(BottomPoleIdx); // Bottom pole
+        Triangles.Add(LastRingStartIdx + LongIdx + 1); // Next vertex on last ring
+        Triangles.Add(LastRingStartIdx + LongIdx); // Current vertex on last ring
     }
 
     // Create the mesh section
-    // SectionIndex 0, Vertices, Triangles, Normals, UVs, VertexColors, Tangents, Collision
     ProceduralMeshComponent->CreateMeshSection_LinearColor(
         0,
         Vertices,
@@ -121,5 +176,25 @@ void AParticle::GenerateCircleMesh()
         true // Enable collision for this mesh section
     );
 
-    // Material is created on UE5 side and set there
+    // Assign the material M_VertexColorCircle located under Content/Materials
+    const FString MaterialPath = TEXT("/Game/Materials/M_VertexColorCircle.M_VertexColorCircle");
+    UMaterialInterface *BaseMaterial = Cast<UMaterialInterface>(
+        StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, *MaterialPath)
+    );
+
+    if (BaseMaterial)
+    {
+        UMaterialInstanceDynamic *DynamicMaterial = UMaterialInstanceDynamic::Create(BaseMaterial, this);
+
+        if (DynamicMaterial && ProceduralMeshComponent)
+        {
+            ProceduralMeshComponent->SetMaterial(0, DynamicMaterial);
+        }
+    }
+}
+
+void AParticle::UpdatePosition(float DeltaTime)
+{
+    Velocity += FVector::DownVector * Gravity * DeltaTime;
+    Position += Velocity * DeltaTime;
 }

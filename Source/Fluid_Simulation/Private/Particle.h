@@ -39,15 +39,28 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Mesh")
 	float Radius;
 
-	// Number of segments to make the circle (more segments = smoother circle)
+	// Number of segments along the height (latitude) of the sphere
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Mesh", meta = (ClampMin = "2", ClampMax = "128"))
+	int32 NumLatitudeSegments;
+
+	// Number of segments around the circumference (longitude) of the sphere
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Mesh", meta = (ClampMin = "3", ClampMax = "128"))
-	int32 NumSegments;
+	int32 NumLongitudeSegments;
 
 	// Color of the particle
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Mesh")
 	FLinearColor Color;
 
-	// Function to generate the circle mesh
-	void GenerateCircleMesh();
+	// Gravity affecting particle // TOOD: add this to overall system since we probably don't want different gravity per particle
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Mesh")
+	float Gravity;
+
+	void GenerateSphereMesh();
+
+	private:
+	FVector Position;
+	FVector Velocity;
+
+	void UpdatePosition(float DeltaTime);
 
 };
