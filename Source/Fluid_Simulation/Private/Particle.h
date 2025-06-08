@@ -51,16 +51,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Mesh")
 	FLinearColor Color;
 
-	// Gravity affecting particle // TOOD: add this to overall system since we probably don't want different gravity per particle
+	// Velocity of the particle
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Mesh")
-	float Gravity;
+	FVector Velocity;
 
 	void GenerateSphereMesh();
 
-	private:
-	FVector Position;
-	FVector Velocity;
-
 	void UpdatePosition(float DeltaTime);
-
+private:
+	FVector Position;
 };

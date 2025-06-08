@@ -6,8 +6,8 @@
 // Sets default values
 AParticle::AParticle()
 {
- 	// We want to update position each tick
-	PrimaryActorTick.bCanEverTick = true;
+ 	// We won't tick here, we will do the calculation in the rectangular prism class
+	PrimaryActorTick.bCanEverTick = false;
 
     // Create and attach the ProceduralMeshComponent
     ProceduralMeshComponent = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("GeneratedMesh"));
@@ -20,7 +20,6 @@ AParticle::AParticle()
     Color = FLinearColor::Blue;
     Position = FVector::ZeroVector; // Default to 0, 0, 0
     Velocity = FVector::ZeroVector; // Default to no velocity
-    Gravity = 200.0f;
 
     // We don't want to use UE5's default collision system for this procedural mesh
 	ProceduralMeshComponent->ContainsPhysicsTriMeshData(false);
@@ -39,14 +38,10 @@ void AParticle::BeginPlay()
 	Super::BeginPlay();
 }
 
-// Called every frame
+// Not used; disabled tick
 void AParticle::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-    UpdatePosition(DeltaTime);
-    GenerateSphereMesh();
-
 }
 
 void AParticle::PostEditChangeProperty(FPropertyChangedEvent &PropertyChangedEvent)
@@ -195,6 +190,5 @@ void AParticle::GenerateSphereMesh()
 
 void AParticle::UpdatePosition(float DeltaTime)
 {
-    Velocity += FVector::DownVector * Gravity * DeltaTime;
     Position += Velocity * DeltaTime;
 }
