@@ -13,7 +13,7 @@ AParticle::AParticle()
     ProceduralMeshComponent = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("GeneratedMesh"));
     RootComponent = ProceduralMeshComponent; // Set it as the root component
 
-    // Set default values for properties
+	// Set default values for properties, these will mostly be overriden when these are spawned in by BoundingRectangularPrism
     Radius = 20.0f;
     NumLatitudeSegments = 32; // Default for a reasonably smooth sphere
     NumLongitudeSegments = 32; // Default for a reasonably smooth sphere

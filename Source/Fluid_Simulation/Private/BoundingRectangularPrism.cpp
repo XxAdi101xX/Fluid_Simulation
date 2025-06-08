@@ -13,11 +13,11 @@ ABoundingRectangularPrism::ABoundingRectangularPrism()
 	PrimaryActorTick.bCanEverTick = true;
 
     // Set default values for bounding box
-    BoxExtent = FVector(200.0f, 200.0f, 200.0f); // 1000x1000x1000 unit box
+    BoxExtent = FVector(200.0f, 200.0f, 200.0f);
 
     // Set environment params
-    Gravity = 0.0f;
-	ParticleCountPerAxis = 2; // Default number of particles per axis
+    Gravity = 200.0f;
+	ParticleCountPerAxis = 3; // Default number of particles per axis
     ParticleGridSpacing = 50.0f;
     JitterFactor = 1.0f;
 	ParticleRadius = 10.0f; // Default radius of each particle
@@ -56,7 +56,32 @@ void ABoundingRectangularPrism::OnConstruction(const FTransform &Transform)
     // Clear any existing particles before spawning new ones
     DestroyAllParticles();
     SpawnParticles();
+    UpdateParticles(0.0f); // Update particles immediately after spawning
 }
+
+void ABoundingRectangularPrism::PostEditChangeProperty(FPropertyChangedEvent &PropertyChangedEvent)
+{
+    Super::PostEditChangeProperty(PropertyChangedEvent);
+
+    FName PropertyName = (PropertyChangedEvent.Property != nullptr) ? PropertyChangedEvent.Property->GetFName() : NAME_None;
+    if (PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, BoxExtent) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, bDrawBoundingBox) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, Gravity) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, ParticleCountPerAxis) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, ParticleGridSpacing) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, JitterFactor) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, ParticleRadius))
+    {
+        // We want to visualize the bounding box and the particles before the game starts
+        DrawBoundingRectangularPrism();
+
+        // Clear any existing particles before spawning new ones
+        DestroyAllParticles();
+        SpawnParticles();
+		UpdateParticles(0.0f); // Update particles immediately after spawning
+    }
+}
+
 
 // Called every frame
 void ABoundingRectangularPrism::Tick(float DeltaTime)
@@ -68,19 +93,6 @@ void ABoundingRectangularPrism::Tick(float DeltaTime)
 
     UpdateParticles(DeltaTime);
 }
-
-void ABoundingRectangularPrism::PostEditChangeProperty(FPropertyChangedEvent &PropertyChangedEvent)
-{
-    Super::PostEditChangeProperty(PropertyChangedEvent);
-
-    // We want to visualize the bounding box and the particles before the game starts
-    DrawBoundingRectangularPrism();
-
-    // Clear any existing particles before spawning new ones
-    DestroyAllParticles();
-    SpawnParticles();
-}
-
 void ABoundingRectangularPrism::DrawBoundingRectangularPrism()
 {
     // Draw the debug bounding box if enabled
@@ -156,6 +168,7 @@ void ABoundingRectangularPrism::SpawnParticles()
                     NewParticle->Radius = ParticleRadius; // Pass the desired visual radius
                     NewParticle->Velocity = FVector::ZeroVector; // Initialize velocity to zero
                     Particles.Add(NewParticle);
+                    UE_LOG(LogTemp, Warning, TEXT("Spawning particle with radius: %f (Set from BoundingRectangularPrism's ParticleRadius: %f)"), NewParticle->Radius, ParticleRadius);
                 }
                 else
                 {
@@ -174,6 +187,7 @@ void ABoundingRectangularPrism::UpdateParticles(float DeltaTime)
 		FVector GravityForce = FVector::DownVector * Gravity * DeltaTime; // Apply gravity in the negative Z direction
 		Particle->Velocity += GravityForce; // Update velocity
 		Particle->UpdatePosition(DeltaTime); // Update particle position
+		Particle->GenerateSphereMesh(); // Regenerate the mesh to reflect the new position
 	}
 }
 
