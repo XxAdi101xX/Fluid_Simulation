@@ -62,6 +62,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fluid Simulation")
 	float ParticleRadius;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bounding Box", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float Restitution; // Measure of the elasticity of a collision particles interacting with this box (0.0 = no bounce, 1.0 = perfect bounce)
+
 private:
 	TSubclassOf<AParticle> ParticleClass;
 	TArray<AParticle *> Particles; // Array to hold particle instances

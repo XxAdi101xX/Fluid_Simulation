@@ -55,9 +55,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Mesh")
 	FVector Velocity;
 
-	void GenerateSphereMesh();
-
-	void UpdatePosition(float DeltaTime);
-private:
+	// Position of the particle
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Mesh")
 	FVector Position;
+
+	void GenerateSphereMesh();
 };

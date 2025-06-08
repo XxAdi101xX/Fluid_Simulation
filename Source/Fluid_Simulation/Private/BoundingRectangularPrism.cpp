@@ -12,17 +12,14 @@ ABoundingRectangularPrism::ABoundingRectangularPrism()
  	// Set this actor to call Tick() every frame.
 	PrimaryActorTick.bCanEverTick = true;
 
-    // Set default values for bounding box
+    // Set default values
     BoxExtent = FVector(200.0f, 200.0f, 200.0f);
-
-    // Set environment params
     Gravity = 200.0f;
-	ParticleCountPerAxis = 3; // Default number of particles per axis
+	ParticleCountPerAxis = 3; 
     ParticleGridSpacing = 50.0f;
     JitterFactor = 1.0f;
-	ParticleRadius = 10.0f; // Default radius of each particle
-
-    // Debugging
+	ParticleRadius = 10.0f;
+	Restitution = 0.8f;
     bDrawBoundingBox = true;
 
      ConstructorHelpers::FClassFinder<AParticle> ParticleBPClass(TEXT("/Game/Blueprints/BP_Particle"));
@@ -70,7 +67,8 @@ void ABoundingRectangularPrism::PostEditChangeProperty(FPropertyChangedEvent &Pr
         PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, ParticleCountPerAxis) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, ParticleGridSpacing) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, JitterFactor) ||
-        PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, ParticleRadius))
+        PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, ParticleRadius) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, Restitution))
     {
         // We want to visualize the bounding box and the particles before the game starts
         DrawBoundingRectangularPrism();
@@ -181,13 +179,78 @@ void ABoundingRectangularPrism::SpawnParticles()
 
 void ABoundingRectangularPrism::UpdateParticles(float DeltaTime)
 {
+    // Calculate effective bounding box min and max in world space
+    FVector MinBounds = GetActorLocation() - BoxExtent;
+    FVector MaxBounds = GetActorLocation() + BoxExtent;
+
+
 	// Update particle velocities based on gravity
 	for (AParticle *Particle : Particles)
 	{
-		FVector GravityForce = FVector::DownVector * Gravity * DeltaTime; // Apply gravity in the negative Z direction
-		Particle->Velocity += GravityForce; // Update velocity
-		Particle->UpdatePosition(DeltaTime); // Update particle position
-		Particle->GenerateSphereMesh(); // Regenerate the mesh to reflect the new position
+        // Apply gravity to the particle's velocity before updating its position
+        Particle->Velocity += FVector::DownVector * Gravity * DeltaTime;
+
+        // Update particle's basic physics (velocity integration only)
+        Particle->Position += Particle->Velocity * DeltaTime;
+
+        // Perform Bounding Box Collision for this particle; Particle's Position is LOCAL to the particle actor
+        FVector SphereWorldPosition = Particle->GetActorLocation() + Particle->Position;
+        float SphereRadius = Particle->Radius;
+
+        bool bCollided = false;
+
+        // Check X-axis collision
+        if (SphereWorldPosition.X - SphereRadius < MinBounds.X)
+        {
+            SphereWorldPosition.X = MinBounds.X + SphereRadius;
+            Particle->Velocity.X *= -Restitution;
+            bCollided = true;
+        }
+        else if (SphereWorldPosition.X + SphereRadius > MaxBounds.X)
+        {
+            SphereWorldPosition.X = MaxBounds.X - SphereRadius;
+            Particle->Velocity.X *= -Restitution;
+            bCollided = true;
+        }
+
+        // Check Y-axis collision
+        if (SphereWorldPosition.Y - SphereRadius < MinBounds.Y)
+        {
+            SphereWorldPosition.Y = MinBounds.Y + SphereRadius;
+            Particle->Velocity.Y *= -Restitution;
+            bCollided = true;
+        }
+        else if (SphereWorldPosition.Y + SphereRadius > MaxBounds.Y)
+        {
+            SphereWorldPosition.Y = MaxBounds.Y - SphereRadius;
+            Particle->Velocity.Y *= -Restitution;
+            bCollided = true;
+        }
+
+        // Check Z-axis collision (floor and ceiling)
+        if (SphereWorldPosition.Z - SphereRadius < MinBounds.Z)
+        {
+            SphereWorldPosition.Z = MinBounds.Z + SphereRadius;
+            Particle->Velocity.Z *= -Restitution;
+            bCollided = true;
+        }
+        else if (SphereWorldPosition.Z + SphereRadius > MaxBounds.Z)
+        {
+            SphereWorldPosition.Z = MaxBounds.Z - SphereRadius;
+            Particle->Velocity.Z *= -Restitution;
+            bCollided = true;
+        }
+
+        // Update the sphere's local Position based on its adjusted world position
+        // This is crucial because UpdatePosition (called earlier) only moved it,
+        // and now collision might have pushed it back.
+        Particle->Position = SphereWorldPosition - Particle->GetActorLocation();
+
+        // Regenerate the particle's mesh to reflect its new position if movement or collision occurred
+        if (bCollided || !Particle->Velocity.IsZero()) 
+        {
+            Particle->GenerateSphereMesh();
+        }
 	}
 }
 

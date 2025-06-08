@@ -187,8 +187,3 @@ void AParticle::GenerateSphereMesh()
         }
     }
 }
-
-void AParticle::UpdatePosition(float DeltaTime)
-{
-    Position += Velocity * DeltaTime;
-}
