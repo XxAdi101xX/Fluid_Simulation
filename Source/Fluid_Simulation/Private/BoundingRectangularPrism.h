@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -24,10 +22,12 @@ protected:
 	virtual void BeginPlay() override;
 
 	// Called when an instance of this class is placed (in editor) or spawned.
-	virtual void OnConstruction(const FTransform &Transform);
+	virtual void OnConstruction(const FTransform &Transform) override;
 
+#if WITH_EDITOR
 	// Called when properties are changed in the editor
 	virtual void PostEditChangeProperty(FPropertyChangedEvent &PropertyChangedEvent) override;
+#endif
 
 
 public:	
@@ -47,7 +47,7 @@ public:
 	// Particle related factors
 
 	// Number of particles to spawn per axis (x, y and z)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fluid Simulation")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fluid Simulation", meta = (ClampMin = "1"))
 	int ParticleCountPerAxis;
 
 	// The radius of each particle
@@ -67,7 +67,7 @@ public:
 
 private:
 	TSubclassOf<AParticle> ParticleClass;
-	TArray<AParticle *> Particles; // Array to hold particle instances
+	TArray<AParticle *> ManagedParticles; // Array to hold particle instances
 
 	void DrawBoundingRectangularPrism(); // Function to generate the mesh (if needed, similar to AParticle)
 

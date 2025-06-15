@@ -1,6 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "BoundingRectangularPrism.h"
 
 #include "Particle.h"
@@ -56,6 +53,7 @@ void ABoundingRectangularPrism::OnConstruction(const FTransform &Transform)
     UpdateParticles(0.0f); // Update particles immediately after spawning
 }
 
+#if WITH_EDITOR
 void ABoundingRectangularPrism::PostEditChangeProperty(FPropertyChangedEvent &PropertyChangedEvent)
 {
     Super::PostEditChangeProperty(PropertyChangedEvent);
@@ -79,6 +77,7 @@ void ABoundingRectangularPrism::PostEditChangeProperty(FPropertyChangedEvent &Pr
 		UpdateParticles(0.0f); // Update particles immediately after spawning
     }
 }
+#endif
 
 
 // Called every frame
@@ -111,16 +110,18 @@ void ABoundingRectangularPrism::DrawBoundingRectangularPrism()
 
 void ABoundingRectangularPrism::SpawnParticles()
 {
-    // Ensure ParticleCountPerAxis is at least 1 to avoid division by zero or negative extents
-    if (ParticleCountPerAxis < 1)
+    if (ParticleClass == nullptr)
     {
-        UE_LOG(LogTemp, Warning, TEXT("ParticleCountPerAxis must be at least 1. Adjusting to 1."));
-        ParticleCountPerAxis = 1;
+        UE_LOG(LogTemp, Error, TEXT("ABoundingRectangularPrism: ParticleClass is not set. Cannot spawn particles."));
+        return;
     }
 
-    // Calculate the total span of the grid along one axis
-    // For N particles, there are (N-1) gaps between them.
     float TotalSpanPerAxis = (ParticleCountPerAxis > 1) ? (ParticleCountPerAxis - 1.0f) * ParticleGridSpacing : 0.0f;
+    FVector HalfSpan = FVector(TotalSpanPerAxis, TotalSpanPerAxis, TotalSpanPerAxis) / 2.0f;
+    FRandomStream RandomStream;
+    RandomStream.Initialize(FMath::Rand());
+
+    ManagedParticles.Empty();
 
     for (int x = 0; x < ParticleCountPerAxis; x++)
     {
@@ -128,130 +129,124 @@ void ABoundingRectangularPrism::SpawnParticles()
         {
             for (int z = 0; z < ParticleCountPerAxis; z++)
             {
-                // Calculate normalized position (0 to 1) for each particle along its axis
-                // If ParticleCountPerAxis is 1, tx/ty/tz will be 0.0f, which is handled correctly below.
-                float tx = (ParticleCountPerAxis > 1) ? (float)x / (ParticleCountPerAxis - 1.0f) : 0.5f; // Center if only one particle
-                float ty = (ParticleCountPerAxis > 1) ? (float)y / (ParticleCountPerAxis - 1.0f) : 0.5f;
-                float tz = (ParticleCountPerAxis > 1) ? (float)z / (ParticleCountPerAxis - 1.0f) : 0.5f;
-
-                // Calculate the raw position relative to the grid's bottom-left-front corner
-                // This would create a grid starting at GetActorLocation().X - TotalSpanPerAxis/2.0f, etc.
-                float px_raw = tx * TotalSpanPerAxis;
-                float py_raw = ty * TotalSpanPerAxis;
-                float pz_raw = tz * TotalSpanPerAxis;
-
-                // Adjust position to center the grid around BoxCenter
-                float px = px_raw - (TotalSpanPerAxis / 2.0f) + GetActorLocation().X;
-                float py = py_raw - (TotalSpanPerAxis / 2.0f) + GetActorLocation().Y;
-                float pz = pz_raw - (TotalSpanPerAxis / 2.0f) + GetActorLocation().Z;
-
-                FVector ParticleLocation(px, py, pz);
-
-                // Jitter: Add random offset to each particle's position
-                if (JitterFactor > KINDA_SMALL_NUMBER) // Check if jitter is significant
+                FVector RelativeGridPos;
+                if (ParticleCountPerAxis > 1)
                 {
-                    ParticleLocation += FMath::VRand() * JitterFactor;
+                    RelativeGridPos.X = (float)x * ParticleGridSpacing;
+                    RelativeGridPos.Y = (float)y * ParticleGridSpacing;
+                    RelativeGridPos.Z = (float)z * ParticleGridSpacing;
+                }
+                else
+                {
+                    RelativeGridPos = FVector::ZeroVector;
+                }
+
+                FVector DesiredParticleWorldLocation = GetActorLocation() + (RelativeGridPos - HalfSpan);
+
+                if (JitterFactor > KINDA_SMALL_NUMBER)
+                {
+                    DesiredParticleWorldLocation.X += RandomStream.GetFraction() * 2.0f * JitterFactor - JitterFactor;
+                    DesiredParticleWorldLocation.Y += RandomStream.GetFraction() * 2.0f * JitterFactor - JitterFactor;
+                    DesiredParticleWorldLocation.Z += RandomStream.GetFraction() * 2.0f * JitterFactor - JitterFactor;
                 }
 
                 FActorSpawnParameters SpawnParams;
                 SpawnParams.Owner = this;
                 SpawnParams.Instigator = GetInstigator();
-                //SpawnParams.SpawnCollisionHandlingMethod = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn; // Recommended for particles
 
-                // Ensure ParticleClass is set in the editor before playing.
-                AParticle *NewParticle = GetWorld()->SpawnActor<AParticle>(ParticleClass, ParticleLocation, FRotator::ZeroRotator, SpawnParams);
+                AParticle *NewParticle = GetWorld()->SpawnActor<AParticle>(ParticleClass, DesiredParticleWorldLocation, FRotator::ZeroRotator, SpawnParams);
 
                 if (NewParticle)
                 {
-                    NewParticle->Radius = ParticleRadius; // Pass the desired visual radius
-                    NewParticle->Velocity = FVector::ZeroVector; // Initialize velocity to zero
-                    Particles.Add(NewParticle);
-                    UE_LOG(LogTemp, Warning, TEXT("Spawning particle with radius: %f (Set from BoundingRectangularPrism's ParticleRadius: %f)"), NewParticle->Radius, ParticleRadius);
+                    NewParticle->Radius = ParticleRadius;
+                    NewParticle->Position = DesiredParticleWorldLocation;
+                    NewParticle->Velocity = FVector::ZeroVector;
+                    NewParticle->GenerateSphereMesh();
+                    NewParticle->SetActorLocation(NewParticle->Position);
+
+                    ManagedParticles.Add(NewParticle);
+                    UE_LOG(LogTemp, Log, TEXT("ABoundingRectangularPrism: Spawned Particle %s at World Pos: %s, Stored Pos: %s"),
+                        *NewParticle->GetName(), *NewParticle->GetActorLocation().ToString(), *NewParticle->Position.ToString());
                 }
                 else
                 {
-                    UE_LOG(LogTemp, Warning, TEXT("Failed to spawn particle at location: %s"), *ParticleLocation.ToString());
+                    UE_LOG(LogTemp, Error, TEXT("ABoundingRectangularPrism: Failed to spawn particle at location: %s"), *DesiredParticleWorldLocation.ToString());
                 }
             }
         }
     }
+    UE_LOG(LogTemp, Log, TEXT("ABoundingRectangularPrism: Spawned %d particles."), ManagedParticles.Num());
 }
 
 void ABoundingRectangularPrism::UpdateParticles(float DeltaTime)
 {
-    // Calculate effective bounding box min and max in world space
     FVector MinBounds = GetActorLocation() - BoxExtent;
     FVector MaxBounds = GetActorLocation() + BoxExtent;
 
+    for (AParticle *Particle : ManagedParticles)
+    {
+        // Store the particle's previous position for comparison
+        FVector PreviousPosition = Particle->Position;
 
-	// Update particle velocities based on gravity
-	for (AParticle *Particle : Particles)
-	{
-        // Apply gravity to the particle's velocity before updating its position
+        // Apply gravity to the particle's velocity
         Particle->Velocity += FVector::DownVector * Gravity * DeltaTime;
 
-        // Update particle's basic physics (velocity integration only)
+        // Update particle's position (which is now its WORLD position)
         Particle->Position += Particle->Velocity * DeltaTime;
 
-        // Perform Bounding Box Collision for this particle; Particle's Position is LOCAL to the particle actor
-        FVector SphereWorldPosition = Particle->GetActorLocation() + Particle->Position;
-        float SphereRadius = Particle->Radius;
-
-        bool bCollided = false;
+        // Perform Bounding Box Collision
+        bool bPositionOrVelocityChanged = false; 
 
         // Check X-axis collision
-        if (SphereWorldPosition.X - SphereRadius < MinBounds.X)
+        if (Particle->Position.X - Particle->Radius < MinBounds.X)
         {
-            SphereWorldPosition.X = MinBounds.X + SphereRadius;
+            Particle->Position.X = MinBounds.X + Particle->Radius;
             Particle->Velocity.X *= -Restitution;
-            bCollided = true;
+            bPositionOrVelocityChanged = true;
         }
-        else if (SphereWorldPosition.X + SphereRadius > MaxBounds.X)
+        else if (Particle->Position.X + Particle->Radius > MaxBounds.X)
         {
-            SphereWorldPosition.X = MaxBounds.X - SphereRadius;
+            Particle->Position.X = MaxBounds.X - Particle->Radius;
             Particle->Velocity.X *= -Restitution;
-            bCollided = true;
+            bPositionOrVelocityChanged = true;
         }
 
         // Check Y-axis collision
-        if (SphereWorldPosition.Y - SphereRadius < MinBounds.Y)
+        if (Particle->Position.Y - Particle->Radius < MinBounds.Y)
         {
-            SphereWorldPosition.Y = MinBounds.Y + SphereRadius;
+            Particle->Position.Y = MinBounds.Y + Particle->Radius;
             Particle->Velocity.Y *= -Restitution;
-            bCollided = true;
+            bPositionOrVelocityChanged = true;
         }
-        else if (SphereWorldPosition.Y + SphereRadius > MaxBounds.Y)
+        else if (Particle->Position.Y + Particle->Radius > MaxBounds.Y)
         {
-            SphereWorldPosition.Y = MaxBounds.Y - SphereRadius;
+            Particle->Position.Y = MaxBounds.Y - Particle->Radius;
             Particle->Velocity.Y *= -Restitution;
-            bCollided = true;
+            bPositionOrVelocityChanged = true;
         }
 
         // Check Z-axis collision (floor and ceiling)
-        if (SphereWorldPosition.Z - SphereRadius < MinBounds.Z)
+        if (Particle->Position.Z - Particle->Radius < MinBounds.Z)
         {
-            SphereWorldPosition.Z = MinBounds.Z + SphereRadius;
+            Particle->Position.Z = MinBounds.Z + Particle->Radius;
             Particle->Velocity.Z *= -Restitution;
-            bCollided = true;
+            Particle->Velocity.X *= 0.9f;
+            Particle->Velocity.Y *= 0.9f;
+            bPositionOrVelocityChanged = true;
         }
-        else if (SphereWorldPosition.Z + SphereRadius > MaxBounds.Z)
+        else if (Particle->Position.Z + Particle->Radius > MaxBounds.Z)
         {
-            SphereWorldPosition.Z = MaxBounds.Z - SphereRadius;
+            Particle->Position.Z = MaxBounds.Z - Particle->Radius;
             Particle->Velocity.Z *= -Restitution;
-            bCollided = true;
+            bPositionOrVelocityChanged = true;
         }
 
-        // Update the sphere's local Position based on its adjusted world position
-        // This is crucial because UpdatePosition (called earlier) only moved it,
-        // and now collision might have pushed it back.
-        Particle->Position = SphereWorldPosition - Particle->GetActorLocation();
-
-        // Regenerate the particle's mesh to reflect its new position if movement or collision occurred
-        if (bCollided || !Particle->Velocity.IsZero()) 
+        // Only update if necessary
+        if (bPositionOrVelocityChanged || !Particle->Velocity.IsZero() || !PreviousPosition.Equals(Particle->Position, KINDA_SMALL_NUMBER))
         {
-            Particle->GenerateSphereMesh();
+            Particle->SetActorLocation(Particle->Position);
         }
-	}
+    }
 }
 
 void ABoundingRectangularPrism::DestroyAllParticles()
@@ -268,7 +263,7 @@ void ABoundingRectangularPrism::DestroyAllParticles()
         }
     }
 
-	Particles.Empty(); // Clear the array of particles
+    ManagedParticles.Empty(); // Clear the array of particles
 }
 
 

@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -23,10 +21,11 @@ protected:
 	virtual void BeginPlay() override;
 
 	// Called when an instance of this class is placed (in editor) or spawned.
-	virtual void OnConstruction(const FTransform &Transform);
-
+	virtual void OnConstruction(const FTransform &Transform) override;
+#if WITH_EDITOR
 	// Called when properties are changed in the editor
 	virtual void PostEditChangeProperty(FPropertyChangedEvent &PropertyChangedEvent) override;
+#endif
 
 public:	
 	// Called every frame
