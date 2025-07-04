@@ -62,18 +62,38 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fluid Simulation")
 	float ParticleRadius;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fluid Simulation")
+	float ParticleMass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fluid Simulation")
+	float TargetDensity;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fluid Simulation")
+	float PressureFactor;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fluid Simulation")
+	float SmoothingRadius;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bounding Box", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float Restitution; // Measure of the elasticity of a collision particles interacting with this box (0.0 = no bounce, 1.0 = perfect bounce)
 
 private:
 	TSubclassOf<AParticle> ParticleClass;
 	TArray<AParticle *> ManagedParticles; // Array to hold particle instances
+	TArray<float> DensitiesAroundParticle; // Array to hold particle densities // TODO store this on the particles themselves??
 
 	void DrawBoundingRectangularPrism(); // Function to generate the mesh (if needed, similar to AParticle)
 
 	void SpawnParticles(); // Function to spawn particles within the bounding box
 
-	void UpdateParticles(float DeltaTime); // Function to update particle velocities based on gravity and other forces
+	void ResolveBoundingBoxCollisions(float DeltaTime); // Function to update particle velocities based on gravity and other forces
 
 	void DestroyAllParticles(); // Function to destroy all particles in the level; this is to avoid having any leftover particles from previous runs
+
+	/* Methods to calculate particle forces on each other */
+	float DensityToPressure(float Density); // Function to convert density to pressure based on target density and pressure factor
+
+	float CalculateDensity(const FVector &SamplePoint); // Function to calculate the density at a given position based on particle positions
+
+	FVector CalculatePressureForce(int ParticleIndex); // Function to calculate the pressure force on a particle based on its density and position relative to other particles
 };

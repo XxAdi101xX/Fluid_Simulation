@@ -10,12 +10,16 @@ ABoundingRectangularPrism::ABoundingRectangularPrism()
 	PrimaryActorTick.bCanEverTick = true;
 
     // Set default values
-    BoxExtent = FVector(200.0f, 200.0f, 200.0f);
+    BoxExtent = FVector(100.0f, 200.0f, 200.0f);
     Gravity = 200.0f;
-	ParticleCountPerAxis = 3; 
-    ParticleGridSpacing = 50.0f;
+	ParticleCountPerAxis = 8; 
+    ParticleGridSpacing = 30.0f;
     JitterFactor = 1.0f;
 	ParticleRadius = 10.0f;
+	ParticleMass = 1.0f; // Default mass for particles
+	TargetDensity = 3.0f; // Default target density for water
+	SmoothingRadius = 25.0f; // Default smoothing radius for SPH
+	PressureFactor = 500.0f; // Default pressure factor for SPH
 	Restitution = 0.8f;
     bDrawBoundingBox = true;
 
@@ -41,7 +45,7 @@ void ABoundingRectangularPrism::BeginPlay()
 }
 
 void ABoundingRectangularPrism::OnConstruction(const FTransform &Transform)
-{
+{ 
     Super::OnConstruction(Transform);
 
     // We want to visualize the bounding box and the particles before the game starts
@@ -50,7 +54,7 @@ void ABoundingRectangularPrism::OnConstruction(const FTransform &Transform)
     // Clear any existing particles before spawning new ones
     DestroyAllParticles();
     SpawnParticles();
-    UpdateParticles(0.0f); // Update particles immediately after spawning
+    ResolveBoundingBoxCollisions(0.0f); // Update particles immediately after spawning
 }
 
 #if WITH_EDITOR
@@ -61,10 +65,8 @@ void ABoundingRectangularPrism::PostEditChangeProperty(FPropertyChangedEvent &Pr
     FName PropertyName = (PropertyChangedEvent.Property != nullptr) ? PropertyChangedEvent.Property->GetFName() : NAME_None;
     if (PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, BoxExtent) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, bDrawBoundingBox) ||
-        PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, Gravity) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, ParticleCountPerAxis) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, ParticleGridSpacing) ||
-        PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, JitterFactor) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, ParticleRadius) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, Restitution))
     {
@@ -74,7 +76,7 @@ void ABoundingRectangularPrism::PostEditChangeProperty(FPropertyChangedEvent &Pr
         // Clear any existing particles before spawning new ones
         DestroyAllParticles();
         SpawnParticles();
-		UpdateParticles(0.0f); // Update particles immediately after spawning
+		ResolveBoundingBoxCollisions(0.0f); // Update particles immediately after spawning
     }
 }
 #endif
@@ -88,7 +90,36 @@ void ABoundingRectangularPrism::Tick(float DeltaTime)
 	// Draw the bounding box every frame, it will clear out otherwise
     DrawBoundingRectangularPrism();
 
-    UpdateParticles(DeltaTime);
+    // Pre-calculate densities around each particle; they will be used by pressure calculations
+    ParallelFor(ManagedParticles.Num(), [&](int32 Index)
+        {
+			AParticle *Particle = ManagedParticles[Index];
+
+            DensitiesAroundParticle[Index] = CalculateDensity(Particle->Position);
+        });
+
+
+	// Apply gravity to the particle's velocity, alculate pressure forces and apply them to the particles' velocities
+    ParallelFor(ManagedParticles.Num(), [&](int32 Index)
+        {
+            AParticle *Particle = ManagedParticles[Index];
+
+			// Apply gravity to the particle's velocity
+            Particle->Velocity += FVector::DownVector * Gravity * DeltaTime;
+
+			// Calculate pressure force based on the density of the particle and its neighbors
+			FVector PressureForce = CalculatePressureForce(Index);
+
+			// F = m * a; but instead of mass, we use the density
+			FVector PressureAcceleration = PressureForce / DensitiesAroundParticle[Index];
+
+			// Update the particle's velocity based on the pressure acceleration
+			Particle->Velocity += PressureAcceleration * DeltaTime;
+        });
+
+	// Also loops over particles to update their positions and handle collisions
+    // TODO: use parallel for here too?
+    ResolveBoundingBoxCollisions(DeltaTime);
 }
 void ABoundingRectangularPrism::DrawBoundingRectangularPrism()
 {
@@ -165,6 +196,7 @@ void ABoundingRectangularPrism::SpawnParticles()
                     NewParticle->SetActorLocation(NewParticle->Position);
 
                     ManagedParticles.Add(NewParticle);
+					DensitiesAroundParticle.Add(0.0f); // Initialize density for this particle
                     UE_LOG(LogTemp, Log, TEXT("ABoundingRectangularPrism: Spawned Particle %s at World Pos: %s, Stored Pos: %s"),
                         *NewParticle->GetName(), *NewParticle->GetActorLocation().ToString(), *NewParticle->Position.ToString());
                 }
@@ -178,7 +210,7 @@ void ABoundingRectangularPrism::SpawnParticles()
     UE_LOG(LogTemp, Log, TEXT("ABoundingRectangularPrism: Spawned %d particles."), ManagedParticles.Num());
 }
 
-void ABoundingRectangularPrism::UpdateParticles(float DeltaTime)
+void ABoundingRectangularPrism::ResolveBoundingBoxCollisions(float DeltaTime)
 {
     FVector MinBounds = GetActorLocation() - BoxExtent;
     FVector MaxBounds = GetActorLocation() + BoxExtent;
@@ -187,9 +219,6 @@ void ABoundingRectangularPrism::UpdateParticles(float DeltaTime)
     {
         // Store the particle's previous position for comparison
         FVector PreviousPosition = Particle->Position;
-
-        // Apply gravity to the particle's velocity
-        Particle->Velocity += FVector::DownVector * Gravity * DeltaTime;
 
         // Update particle's position (which is now its WORLD position)
         Particle->Position += Particle->Velocity * DeltaTime;
@@ -264,6 +293,74 @@ void ABoundingRectangularPrism::DestroyAllParticles()
     }
 
     ManagedParticles.Empty(); // Clear the array of particles
+}
+
+float SmoothingKernel(float Distance, float Radius)
+{
+	if (Distance >= Radius)
+	{
+		return 0.0f; // Outside the influence radius
+	}
+
+	float Volume = PI * pow(Radius, 4) / 6.0f;
+
+    return (Radius - Distance) * (Radius - Distance) / Volume;
+}
+
+float SmoothingKernelDerivative(float Distance, float Radius)
+{
+	if (Distance >= Radius)
+	{
+		return 0.0f; // Outside the influence radius
+	}
+
+	float Scale = 12 / (PI * pow(Radius, 4));
+	return (Distance - Radius) * Scale;
+}
+
+float ABoundingRectangularPrism::DensityToPressure(float Density)
+{
+	// Calculate pressure based on the difference from target density
+	// This equation is better applicable for gasses but we will use it for liquids as well
+    float DensityDifference = (Density - TargetDensity);
+	float Pressure = PressureFactor * DensityDifference;
+	return Pressure;
+}
+
+float ABoundingRectangularPrism::CalculateDensity(const FVector &SamplePoint)
+{
+	float Density = 0.0f;
+    const float Mass = 1.0f;
+
+	// TODO: optimize to only look at particles within smoothing radius
+	for (const AParticle *Particle : ManagedParticles)
+	{
+		float Distance = (Particle->Position - SamplePoint).Size();
+		float Influence = SmoothingKernel(Distance, SmoothingRadius);
+		Density += Mass * Influence;
+	}
+	return Density;
+}
+
+FVector ABoundingRectangularPrism::CalculatePressureForce(int ParticleIndex)
+{
+    FVector PressureForce = FVector::ZeroVector;
+    for (int CurrentParticleIndex = 0; CurrentParticleIndex < ManagedParticles.Num(); ++CurrentParticleIndex)
+    {
+		if (CurrentParticleIndex == ParticleIndex)
+		{
+			continue; // Skip the particle itself
+		}
+        const AParticle *CurrentParticle = ManagedParticles[CurrentParticleIndex];
+
+		FVector OffsetBetweenParticles = (CurrentParticle->Position - ManagedParticles[ParticleIndex]->Position);
+		float Distance = OffsetBetweenParticles.Size();
+        FVector Direction = Distance == 0 ? FMath::VRand() : OffsetBetweenParticles / Distance;
+        float Slope = SmoothingKernelDerivative(Distance, SmoothingRadius);
+        float Density = DensitiesAroundParticle[CurrentParticleIndex];
+        PressureForce += -DensityToPressure(Density) * Slope *Direction *ParticleMass / Density;
+    }
+    return PressureForce;
 }
 
 
