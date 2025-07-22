@@ -91,9 +91,11 @@ private:
 	void DestroyAllParticles(); // Function to destroy all particles in the level; this is to avoid having any leftover particles from previous runs
 
 	/* Methods to calculate particle forces on each other */
+	float CalculateDensity(const FVector &SamplePoint); // Function to calculate the density at a given position based on particle positions
+
 	float DensityToPressure(float Density); // Function to convert density to pressure based on target density and pressure factor
 
-	float CalculateDensity(const FVector &SamplePoint); // Function to calculate the density at a given position based on particle positions
+	float CalculateSharedPressure(float Density1, float Density2); // Function to calculate shared pressure between two particles based on their densities
 
 	FVector CalculatePressureForce(int ParticleIndex); // Function to calculate the pressure force on a particle based on its density and position relative to other particles
 };

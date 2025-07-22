@@ -63,9 +63,7 @@ void ABoundingRectangularPrism::PostEditChangeProperty(FPropertyChangedEvent &Pr
     Super::PostEditChangeProperty(PropertyChangedEvent);
 
     FName PropertyName = (PropertyChangedEvent.Property != nullptr) ? PropertyChangedEvent.Property->GetFName() : NAME_None;
-    if (PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, BoxExtent) ||
-        PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, bDrawBoundingBox) ||
-        PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, ParticleCountPerAxis) ||
+    if (PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, ParticleCountPerAxis) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, ParticleGridSpacing) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, ParticleRadius) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(ABoundingRectangularPrism, Restitution))
@@ -197,8 +195,10 @@ void ABoundingRectangularPrism::SpawnParticles()
 
                     ManagedParticles.Add(NewParticle);
 					DensitiesAroundParticle.Add(0.0f); // Initialize density for this particle
+#if 0
                     UE_LOG(LogTemp, Log, TEXT("ABoundingRectangularPrism: Spawned Particle %s at World Pos: %s, Stored Pos: %s"),
                         *NewParticle->GetName(), *NewParticle->GetActorLocation().ToString(), *NewParticle->Position.ToString());
+#endif
                 }
                 else
                 {
@@ -318,28 +318,36 @@ float SmoothingKernelDerivative(float Distance, float Radius)
 	return (Distance - Radius) * Scale;
 }
 
+float ABoundingRectangularPrism::CalculateDensity(const FVector &SamplePoint)
+{
+    float Density = 0.0f;
+    const float Mass = 1.0f;
+
+    // TODO: optimize to only look at particles within smoothing radius
+    for (const AParticle *Particle : ManagedParticles)
+    {
+        float Distance = (Particle->Position - SamplePoint).Size();
+        float Influence = SmoothingKernel(Distance, SmoothingRadius);
+        Density += Mass * Influence;
+    }
+    return Density;
+}
+
 float ABoundingRectangularPrism::DensityToPressure(float Density)
 {
 	// Calculate pressure based on the difference from target density
 	// This equation is better applicable for gasses but we will use it for liquids as well
-    float DensityDifference = (Density - TargetDensity);
+    float DensityDifference = (TargetDensity - Density);
 	float Pressure = PressureFactor * DensityDifference;
 	return Pressure;
 }
 
-float ABoundingRectangularPrism::CalculateDensity(const FVector &SamplePoint)
+float ABoundingRectangularPrism::CalculateSharedPressure(float Density1, float Density2)
 {
-	float Density = 0.0f;
-    const float Mass = 1.0f;
-
-	// TODO: optimize to only look at particles within smoothing radius
-	for (const AParticle *Particle : ManagedParticles)
-	{
-		float Distance = (Particle->Position - SamplePoint).Size();
-		float Influence = SmoothingKernel(Distance, SmoothingRadius);
-		Density += Mass * Influence;
-	}
-	return Density;
+	// Calculate shared pressure between two particles based on their densities
+	float Pressure1 = DensityToPressure(Density1);
+	float Pressure2 = DensityToPressure(Density2);
+	return (Pressure1 + Pressure2) / 2.0f; // Average pressure
 }
 
 FVector ABoundingRectangularPrism::CalculatePressureForce(int ParticleIndex)
@@ -358,7 +366,8 @@ FVector ABoundingRectangularPrism::CalculatePressureForce(int ParticleIndex)
         FVector Direction = Distance == 0 ? FMath::VRand() : OffsetBetweenParticles / Distance;
         float Slope = SmoothingKernelDerivative(Distance, SmoothingRadius);
         float Density = DensitiesAroundParticle[CurrentParticleIndex];
-        PressureForce += -DensityToPressure(Density) * Slope *Direction *ParticleMass / Density;
+		float SharedPressure = CalculateSharedPressure(Density, DensitiesAroundParticle[ParticleIndex]);
+        PressureForce += SharedPressure * Slope *Direction *ParticleMass / Density;
     }
     return PressureForce;
 }
