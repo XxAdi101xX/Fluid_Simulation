@@ -77,6 +77,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bounding Box", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float Restitution; // Measure of the elasticity of a collision particles interacting with this box (0.0 = no bounce, 1.0 = perfect bounce)
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Particle Properties")
+	float MinSpeedForColor;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Particle Properties")
+	float MaxSpeedForColor;
+
 private:
 	TSubclassOf<AParticle> ParticleClass;
 	TArray<AParticle *> ManagedParticles; // Array to hold particle instances

@@ -21,6 +21,8 @@ ABoundingRectangularPrism::ABoundingRectangularPrism()
 	SmoothingRadius = 25.0f; // Default smoothing radius for SPH
 	PressureFactor = 500.0f; // Default pressure factor for SPH
 	Restitution = 0.8f;
+    MinSpeedForColor = 0.0f;
+    MaxSpeedForColor = 2.0f;
     bDrawBoundingBox = true;
 
      ConstructorHelpers::FClassFinder<AParticle> ParticleBPClass(TEXT("/Game/Blueprints/BP_Particle"));
@@ -88,6 +90,15 @@ void ABoundingRectangularPrism::Tick(float DeltaTime)
 	// Draw the bounding box every frame, it will clear out otherwise
     DrawBoundingRectangularPrism();
 
+    ParallelFor(ManagedParticles.Num(), [&](int32 Index)
+        {
+            AParticle *Particle = ManagedParticles[Index];
+            // Apply gravity to the particle's velocity
+            Particle->Velocity += FVector::DownVector * Gravity * DeltaTime;
+
+			// TODO look into implementing predicted positions for increased time to get to system stability
+        });
+
     // Pre-calculate densities around each particle; they will be used by pressure calculations
     ParallelFor(ManagedParticles.Num(), [&](int32 Index)
         {
@@ -102,9 +113,6 @@ void ABoundingRectangularPrism::Tick(float DeltaTime)
         {
             AParticle *Particle = ManagedParticles[Index];
 
-			// Apply gravity to the particle's velocity
-            Particle->Velocity += FVector::DownVector * Gravity * DeltaTime;
-
 			// Calculate pressure force based on the density of the particle and its neighbors
 			FVector PressureForce = CalculatePressureForce(Index);
 
@@ -118,6 +126,13 @@ void ABoundingRectangularPrism::Tick(float DeltaTime)
 	// Also loops over particles to update their positions and handle collisions
     // TODO: use parallel for here too?
     ResolveBoundingBoxCollisions(DeltaTime);
+
+    // Update color based on speed; still needs debugging and makes the simulation run slow
+    //for (int32 Index = 0; Index < ManagedParticles.Num(); ++Index)
+    //{
+    //    AParticle* Particle = ManagedParticles[Index];
+    //    Particle->UpdateColorBasedOnSpeed(MinSpeedForColor, MaxSpeedForColor);
+    //};
 }
 void ABoundingRectangularPrism::DrawBoundingRectangularPrism()
 {
@@ -207,6 +222,7 @@ void ABoundingRectangularPrism::SpawnParticles()
             }
         }
     }
+
     UE_LOG(LogTemp, Log, TEXT("ABoundingRectangularPrism: Spawned %d particles."), ManagedParticles.Num());
 }
 
@@ -215,8 +231,10 @@ void ABoundingRectangularPrism::ResolveBoundingBoxCollisions(float DeltaTime)
     FVector MinBounds = GetActorLocation() - BoxExtent;
     FVector MaxBounds = GetActorLocation() + BoxExtent;
 
-    for (AParticle *Particle : ManagedParticles)
+    for (int32 Index = 0; Index < ManagedParticles.Num(); ++Index)
     {
+        AParticle* Particle = ManagedParticles[Index];
+
         // Store the particle's previous position for comparison
         FVector PreviousPosition = Particle->Position;
 

@@ -69,13 +69,12 @@ void AParticle::GenerateSphereMesh()
     // Clear any existing mesh data
     ProceduralMeshComponent->ClearAllMeshSections();
 
-    // Arrays to hold mesh data
-    TArray<FVector> Vertices;
-    TArray<int32> Triangles;
-    TArray<FVector> Normals;
-    TArray<FVector2D> UV0;
-    TArray<FLinearColor> VertexColors;
-    TArray<FProcMeshTangent> Tangents;
+    Vertices.Empty();
+    Triangles.Empty();
+    Normals.Empty();
+    UV0.Empty();
+    VertexColors.Empty();
+    Tangents.Empty();
 
     // Calculate number of vertices
     int32 NumPoles = 2; // Top and bottom poles
@@ -187,5 +186,47 @@ void AParticle::GenerateSphereMesh()
             ProceduralMeshComponent->SetMaterial(0, DynamicMaterial);
         }
     }
+}
+
+void AParticle::UpdateVertexColors(const FLinearColor& NewColor)
+{
+    // Update all vertex colors
+    for (int32 i = 0; i < VertexColors.Num(); ++i)
+    {
+        VertexColors[i] = NewColor;
+    }
+
+    ProceduralMeshComponent->UpdateMeshSection_LinearColor(
+        0,
+        Vertices,      // Your array from sphere generation
+        Normals,
+        UV0,
+        VertexColors,  // Your array of new colors
+        Tangents,
+        true
+    );
+}
+
+void AParticle::UpdateColorBasedOnSpeed(float MinSpeed, float MaxSpeed)
+{
+    // Calculate the magnitude of velocity (speed)
+    float Speed = Velocity.Size();
+
+    // Clamp the speed to our min/max range
+    Speed = FMath::Clamp(Speed, MinSpeed, MaxSpeed);
+
+    // Calculate normalized speed (0 to 1)
+    float NormalizedSpeed = (Speed - MinSpeed) / (MaxSpeed - MinSpeed);
+
+    // Lerp from blue (slow) to red (fast)
+    FLinearColor NewColor = FLinearColor::LerpUsingHSV(
+        FLinearColor::Yellow,    // Slow color
+        FLinearColor::Red,     // Fast color
+        NormalizedSpeed
+    );
+
+    // Update the particle's color
+    Color = NewColor;
+    UpdateVertexColors(NewColor);
 }
 

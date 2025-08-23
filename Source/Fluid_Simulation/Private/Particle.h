@@ -58,5 +58,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Mesh")
 	FVector Position;
 
+	// Array to store vertex colors for the mesh
+	UPROPERTY()
+    TArray<FVector> Vertices;
+    TArray<int32> Triangles;
+    TArray<FVector> Normals;
+    TArray<FVector2D> UV0;
+	TArray<FLinearColor> VertexColors;
+    TArray<FProcMeshTangent> Tangents;
+
 	void GenerateSphereMesh();
+
+	void UpdateVertexColors(const FLinearColor& NewColor);
+
+public:
+    void UpdateColorBasedOnSpeed(float MinSpeed, float MaxSpeed);
 };
